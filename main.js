@@ -1,14 +1,8 @@
 // Import the functions you need from the SDKs you need
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-import { getAnalytics } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-analytics.js";
-import { getFirestore, collection, addDoc, doc,setDoc, getDoc,getDocs, onSnapshot,updateDoc ,deleteDoc} from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
-import { getDatabase } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
+import { getFirestore, collection, addDoc, doc, setDoc, getDoc, getDocs, onSnapshot, updateDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
-// TODO: Add SDKs for Firebase products that you want to use
-// https://firebase.google.com/docs/web/setup#available-libraries
 
-// Your web app's Firebase configuration
-// For Firebase JS SDK v7.20.0 and later, measurementId is optional
 const firebaseConfig = {
   apiKey: "AIzaSyBBCnYSogOwJndZnpQDX3UqwnoVE5e0pX4",
   authDomain: "testing-of-rooms.firebaseapp.com",
@@ -50,9 +44,9 @@ const hangupButton = document.getElementById('hangupButton');
 
 // 1. Setup media sources
 webcamButton.onclick = async () => {
-  localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+  localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: { echoCancellation: true } });
   remoteStream = new MediaStream();
-
+  webcamVideo.muted = true;
   // Push tracks from local stream to peer connection
   localStream.getTracks().forEach((track) => {
     pc.addTrack(track, localStream);
@@ -62,7 +56,6 @@ webcamButton.onclick = async () => {
   pc.ontrack = (event) => {
     remoteStream.addTrack(event.track);
   };
-  pc.addTransceiver('audio', {direction: 'sendonly'});
 
   webcamVideo.srcObject = localStream;
   remoteVideo.srcObject = remoteStream;
@@ -72,12 +65,26 @@ webcamButton.onclick = async () => {
   webcamButton.disabled = true;
 };
 
+
+// Function to set the callId
+function setCallId() {
+  callId = Math.floor(Math.random() * 1000000000).toString();
+  // Additional logic if needed...
+}
+
+// Function that uses the callId
+function printCallId() {
+  console.log('Current callId:', callId);
+}
+
 // 2. Create an offer
 callButton.onclick = async () => {
   // Reference Firestore collections for signaling
-  callId=callInput.value = Math.floor(Math.random() * 1000000000).toString();
+  setCallId(); // Call the setCallId function to generate and set the callId
   navigator.clipboard.writeText(callId);
-  console.log(callInput.value);
+  printCallId(); // Call the printCallId function to print the callId
+  alert('Call ID has been copied to clipboard');
+
   const callDoc = doc(db, 'calls', callId);
   const offerCandidates = collection(callDoc, 'offerCandidates');
   const answerCandidates = collection(callDoc, 'answerCandidates');
@@ -122,6 +129,8 @@ callButton.onclick = async () => {
   hangupButton.disabled = false;
 };
 
+// ... (the rest of your existing code)
+
 // 3. Answer the call with the unique ID
 answerButton.onclick = async () => {
   const callId = callInput.value;
@@ -157,10 +166,14 @@ answerButton.onclick = async () => {
       }
     });
   });
+  hangupButton.disabled = false;
+
 };
 
 // hangupcall
 hangupButton.onclick = async () => {
+  const callId = callInput.value;
+  
   const callDoc = doc(db, 'calls', callId);
   const offerCandidates = collection(callDoc, 'offerCandidates');
   const answerCandidates = collection(callDoc, 'answerCandidates');
@@ -182,7 +195,8 @@ hangupButton.onclick = async () => {
 
   // Close the peer connection
   pc.close();
-
+  // reset the remote stream
+  remoteStream = new MediaStream();
   // Remove event listeners and reset streams
   pc.onicecandidate = null;
   pc.ontrack = null;
@@ -191,9 +205,15 @@ hangupButton.onclick = async () => {
   webcamVideo.srcObject = null;
   remoteVideo.srcObject = null;
 
-  // Enable the webcam button and disable other buttons
   webcamButton.disabled = false;
   callButton.disabled = true;
   answerButton.disabled = true;
   hangupButton.disabled = true;
+  resetWebpage();
 };
+
+function   resetWebpage(){
+    location.reload();
+}
+
+
