@@ -1,7 +1,7 @@
 // Import the functions you need from the SDKs you need
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
 import { getAnalytics } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-analytics.js";
-import { getFirestore, collection, addDoc, doc,setDoc, getDoc, onSnapshot,updateDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+import { getFirestore, collection, addDoc, doc,setDoc, getDoc,getDocs, onSnapshot,updateDoc ,deleteDoc} from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 import { getDatabase } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
 
 // TODO: Add SDKs for Firebase products that you want to use
@@ -38,7 +38,7 @@ const servers = {
 const pc = new RTCPeerConnection(servers);
 let localStream = null;
 let remoteStream = null;
-
+let callId;
 // HTML elements
 const webcamButton = document.getElementById('webcamButton');
 const webcamVideo = document.getElementById('webcamVideo');
@@ -74,10 +74,10 @@ webcamButton.onclick = async () => {
 // 2. Create an offer
 callButton.onclick = async () => {
   // Reference Firestore collections for signaling
-  callInput.value = Math.floor(Math.random() * 1000000000).toString();
-  navigator.clipboard.writeText(callInput.value);
+  callId=callInput.value = Math.floor(Math.random() * 1000000000).toString();
+  navigator.clipboard.writeText(callId);
   console.log(callInput.value);
-  const callDoc = doc(db, 'calls', callInput.value);
+  const callDoc = doc(db, 'calls', callId);
   const offerCandidates = collection(callDoc, 'offerCandidates');
   const answerCandidates = collection(callDoc, 'answerCandidates');
 
@@ -156,4 +156,43 @@ answerButton.onclick = async () => {
       }
     });
   });
+};
+
+// hangupcall
+hangupButton.onclick = async () => {
+  const callDoc = doc(db, 'calls', callId);
+  const offerCandidates = collection(callDoc, 'offerCandidates');
+  const answerCandidates = collection(callDoc, 'answerCandidates');
+
+  // Update the document to indicate hangup
+  await updateDoc(callDoc, { hangup: true });
+
+  // Delete offerCandidates documents
+  const offerQuerySnapshot = await getDocs(offerCandidates);
+  offerQuerySnapshot.forEach((doc) => {
+    deleteDoc(doc.ref);
+  });
+
+  // Delete answerCandidates documents
+  const answerQuerySnapshot = await getDocs(answerCandidates);
+  answerQuerySnapshot.forEach((doc) => {
+    deleteDoc(doc.ref);
+  });
+
+  // Close the peer connection
+  pc.close();
+
+  // Remove event listeners and reset streams
+  pc.onicecandidate = null;
+  pc.ontrack = null;
+  pc.onremovetrack = null;
+  pc.oniceconnectionstatechange = null;
+  webcamVideo.srcObject = null;
+  remoteVideo.srcObject = null;
+
+  // Enable the webcam button and disable other buttons
+  webcamButton.disabled = false;
+  callButton.disabled = true;
+  answerButton.disabled = true;
+  hangupButton.disabled = true;
 };
