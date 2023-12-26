@@ -62,6 +62,7 @@ webcamButton.onclick = async () => {
   pc.ontrack = (event) => {
     remoteStream.addTrack(event.track);
   };
+  pc.addTransceiver('audio', {direction: 'sendonly'});
 
   webcamVideo.srcObject = localStream;
   remoteVideo.srcObject = remoteStream;
