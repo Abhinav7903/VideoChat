@@ -216,4 +216,63 @@ function   resetWebpage(){
     location.reload();
 }
 
+// 5. Share Screen 
+const shareScreen = document.getElementById('shareScreenButton');
+let mediaStream = null;
+const stopScreenButton= document.getElementById('stopScreenButton');
 
+shareScreen.onclick = async () => {
+  try {
+      mediaStream = await navigator.mediaDevices.getDisplayMedia({
+          video: {
+              cursor: "always"
+          },
+          audio: false
+      });
+  } catch (ex) {
+      console.log("Error occurred", ex);
+  }
+
+  // Push tracks from local stream to peer connection
+  mediaStream.getTracks().forEach((track) => {
+      pc.addTrack(track, mediaStream);
+  });
+
+  // Pull tracks from remote stream, add to video stream
+  pc.ontrack = (event) => {
+      remoteStream.addTrack(event.track);
+      // Refresh remote video source with the updated remoteStream
+      remoteVideo.srcObject = remoteStream;
+  };
+
+  // Update local and remote video sources
+  webcamVideo.srcObject = mediaStream;
+  remoteVideo.srcObject = remoteStream;
+
+  // Disable the share screen button and enable the stop screen button
+  shareScreen.disabled = true;
+  stopScreenButton.disabled = false;
+};
+
+// 6. Stop Screen Sharing
+stopScreenButton.onclick = async () => {
+    // Remove tracks from local stream to peer connection
+    mediaStream.getTracks().forEach((track) => {
+        pc.removeTrack(track, mediaStream);
+    });
+
+    // Pull tracks from remote stream, add to video stream
+    pc.ontrack = (event) => {
+        remoteStream.removeTrack(event.track);
+    };
+
+    // screenshare visible to local
+    webcamVideo.srcObject = localStream;
+    // screenshare visible to remote
+    remoteVideo.srcObject = remoteStream;
+
+    // disable the share screen button
+    shareScreen.disabled = false;
+    stopScreenButton.disabled = true;
+
+}
