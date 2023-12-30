@@ -19,6 +19,7 @@ const app = initializeApp(firebaseConfig);
 
 const db = getFirestore(app);
 
+// WebRTC configuration
 const servers = {
   iceServers: [
     {
@@ -33,6 +34,9 @@ const pc = new RTCPeerConnection(servers);
 let localStream = null;
 let remoteStream = null;
 let callId;
+let peer;
+let answerpeer;
+
 // HTML elements
 const webcamButton = document.getElementById('webcamButton');
 const webcamVideo = document.getElementById('webcamVideo');
@@ -47,6 +51,7 @@ webcamButton.onclick = async () => {
   localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: { echoCancellation: true } });
   remoteStream = new MediaStream();
   webcamVideo.muted = true;
+
   // Push tracks from local stream to peer connection
   localStream.getTracks().forEach((track) => {
     pc.addTrack(track, localStream);
@@ -65,7 +70,6 @@ webcamButton.onclick = async () => {
   webcamButton.disabled = true;
 };
 
-
 // Function to set the callId
 function setCallId() {
   callId = Math.floor(Math.random() * 1000000000).toString();
@@ -80,9 +84,9 @@ function printCallId() {
 // 2. Create an offer
 callButton.onclick = async () => {
   // Reference Firestore collections for signaling
-  setCallId(); // Call the setCallId function to generate and set the callId
+  setCallId();
   navigator.clipboard.writeText(callId);
-  printCallId(); // Call the printCallId function to print the callId
+  printCallId();
   alert('Call ID has been copied to clipboard');
 
   const callDoc = doc(db, 'calls', callId);
@@ -127,9 +131,8 @@ callButton.onclick = async () => {
     });
   });
   hangupButton.disabled = false;
+  peer = { peerConnection: pc };
 };
-
-// ... (the rest of your existing code)
 
 // 3. Answer the call with the unique ID
 answerButton.onclick = async () => {
@@ -167,19 +170,29 @@ answerButton.onclick = async () => {
     });
   });
   hangupButton.disabled = false;
-
+  answerpeer = { peerConnection: pc };
 };
 
-// hangupcall
+// Hang up the call
 hangupButton.onclick = async () => {
-  const callId = callInput.value;
-  
-  const callDoc = doc(db, 'calls', callId);
+  callId;
+
+  const anscallid = callInput.value;
+  // either callId or anscallid will be valid
+  if (!callId && !anscallid) {
+    console.error('Invalid callId:', callId);
+    return;
+  }
+
+  const selectedCallId = callId || anscallid;
+  const callDoc = doc(db, 'calls', selectedCallId);
   const offerCandidates = collection(callDoc, 'offerCandidates');
   const answerCandidates = collection(callDoc, 'answerCandidates');
 
   // Update the document to indicate hangup
-  await updateDoc(callDoc, { hangup: true });
+  await updateDoc(callDoc, { hangup: true }).catch((error) => {
+    console.error('Error updating hangup status:', error);
+  });
 
   // Delete offerCandidates documents
   const offerQuerySnapshot = await getDocs(offerCandidates);
@@ -195,8 +208,10 @@ hangupButton.onclick = async () => {
 
   // Close the peer connection
   pc.close();
-  // reset the remote stream
+
+  // Reset the remote stream
   remoteStream = new MediaStream();
+
   // Remove event listeners and reset streams
   pc.onicecandidate = null;
   pc.ontrack = null;
@@ -212,67 +227,62 @@ hangupButton.onclick = async () => {
   resetWebpage();
 };
 
-function   resetWebpage(){
-    location.reload();
+
+// Function to reset the webpage
+function resetWebpage() {
+  location.reload();
 }
 
-// 5. Share Screen 
-const shareScreen = document.getElementById('shareScreenButton');
+// 5. Share Screen
+
 let mediaStream = null;
-const stopScreenButton= document.getElementById('stopScreenButton');
+const stopScreenButton = document.getElementById('stopScreenButton');
+let screenSharing = false;
+let screenStream;
 
-shareScreen.onclick = async () => {
-  try {
-      mediaStream = await navigator.mediaDevices.getDisplayMedia({
-          video: {
-              cursor: "always"
-          },
-          audio: false
-      });
-  } catch (ex) {
-      console.log("Error occurred", ex);
+document.getElementById('shareScreenButton').addEventListener('click', () => {
+  if (screenSharing) {
+    // If already sharing, stop screen sharing
+    stopScreenSharing(peer, answerpeer);
+  } else {
+    // If not sharing, start screen sharing with the appropriate peer
+    startScreenShare(answerpeer || peer);
   }
+});
 
-  // Push tracks from local stream to peer connection
-  mediaStream.getTracks().forEach((track) => {
-      pc.addTrack(track, mediaStream);
-  });
-
-  // Pull tracks from remote stream, add to video stream
-  pc.ontrack = (event) => {
-      remoteStream.addTrack(event.track);
-      // Refresh remote video source with the updated remoteStream
-      remoteVideo.srcObject = remoteStream;
-  };
-
-  // Update local and remote video sources
-  webcamVideo.srcObject = mediaStream;
-  remoteVideo.srcObject = remoteStream;
-
-  // Disable the share screen button and enable the stop screen button
-  shareScreen.disabled = true;
-  stopScreenButton.disabled = false;
-};
-
-// 6. Stop Screen Sharing
-stopScreenButton.onclick = async () => {
-    // Remove tracks from local stream to peer connection
-    mediaStream.getTracks().forEach((track) => {
-        pc.removeTrack(track, mediaStream);
-    });
-
-    // Pull tracks from remote stream, add to video stream
-    pc.ontrack = (event) => {
-        remoteStream.removeTrack(event.track);
+function startScreenShare(peer) {
+  if (screenSharing) return;
+  navigator.mediaDevices.getDisplayMedia({ video: true }).then((mediaStream) => {
+    screenStream = mediaStream;
+    let videoTrack = mediaStream.getVideoTracks()[0];
+    videoTrack.onended = function () {
+      stopScreenSharing(peer);
     };
+    if (peer) {
+      let sender = peer.peerConnection.getSenders().find(function (s) {
+        return s.track.kind == videoTrack.kind;
+      });
+      sender.replaceTrack(videoTrack);
+    }
+    screenSharing = true;
+  });
+}
 
-    // screenshare visible to local
-    webcamVideo.srcObject = localStream;
-    // screenshare visible to remote
-    remoteVideo.srcObject = remoteStream;
+stopScreenButton.addEventListener('click', () => {
+  stopScreenSharing(peer, answerpeer);
+});
 
-    // disable the share screen button
-    shareScreen.disabled = false;
-    stopScreenButton.disabled = true;
-
+function stopScreenSharing(peer) {
+  if (!screenSharing) return;
+  let videoTrack = localStream.getVideoTracks()[0];
+  if (peer) {
+    let sender = peer.peerConnection.getSenders().find(function (s) {
+      return s.track.kind == videoTrack.kind;
+    });
+    sender.replaceTrack(videoTrack);
+  }
+  screenStream.getTracks().forEach(function (track) {
+    track.stop();
+  });
+  screenSharing = false;
 }
